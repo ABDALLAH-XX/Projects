@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "author": "Abdallah Hafidhou",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "wokwi-breadboard-half",
+      "id": "bb1",
+      "top": -215.1,
+      "left": 12.9,
+      "rotate": 90,
+      "attrs": {}
+    },
+    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": 67.2, "left": 129.64, "attrs": {} },
+    {
+      "type": "wokwi-pushbutton-6mm",
+      "id": "btn1",
+      "top": -232.6,
+      "left": 163.2,
+      "attrs": { "color": "green", "xray": "1" }
+    }
+  ],
+  "connections": [
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+    [ "btn1:1.l", "bb1:3b.f", "", [ "$bb" ] ],
+    [ "btn1:2.l", "bb1:5b.f", "", [ "$bb" ] ],
+    [ "btn1:1.r", "bb1:3t.e", "", [ "$bb" ] ],
+    [ "btn1:2.r", "bb1:5t.e", "", [ "$bb" ] ],
+    [ "esp:GND.1", "bb1:3b.j", "black", [ "h0" ] ],
+    [ "esp:21", "bb1:5t.a", "green", [ "h67.2", "v-355.2", "h-67.2" ] ]
+  ],
+  "dependencies": {}
+}

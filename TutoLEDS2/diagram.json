@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "author": "Abdallah Hafidhou",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "wokwi-breadboard",
+      "id": "bb1",
+      "top": 408.2,
+      "left": 119.2,
+      "rotate": 90,
+      "attrs": {}
+    },
+    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": -172.8, "left": 446.44, "attrs": {} },
+    {
+      "type": "wokwi-led",
+      "id": "led2",
+      "top": 229.2,
+      "left": 477,
+      "rotate": 90,
+      "attrs": { "color": "red" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r1",
+      "top": 281.8,
+      "left": 459.95,
+      "rotate": 270,
+      "attrs": { "value": "1000" }
+    }
+  ],
+  "connections": [
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+    [ "r1:1", "bb1:12t.b", "", [ "$bb" ] ],
+    [ "r1:2", "bb1:6t.b", "", [ "$bb" ] ],
+    [ "led2:A", "bb1:6t.c", "", [ "$bb" ] ],
+    [ "led2:C", "bb1:5t.c", "", [ "$bb" ] ],
+    [ "esp:GND.1", "bb1:5t.e", "black", [ "h-38.25", "v172.8" ] ],
+    [ "bb1:12t.a", "esp:2", "green", [ "h86.4", "v-326.4" ] ]
+  ],
+  "dependencies": {}
+}
