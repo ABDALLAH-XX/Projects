@@ -2,24 +2,24 @@
 
 #define BUTTON_PIN 26
 
+int pressCount = 0;
+int lastState = HIGH;
+
 void setup() {
   Serial.begin(9600);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
-  Serial.println("=== BUTTON DIAGNOSTIC ===");
-  Serial.println("Press button to see state change");
-  Serial.println("1 = Not Pressed, 0 = Pressed");
-  Serial.println("==========================");
+  Serial.println("Button Counter Started");
 }
 
 void loop() {
-  int buttonState = digitalRead(BUTTON_PIN);
+  int currentState = digitalRead(BUTTON_PIN);
   
-  Serial.print("Button State: ");
-  Serial.println(buttonState);
+  if (lastState == HIGH && currentState == LOW) {
+    pressCount++;
+    Serial.print("Press Button: ");
+    Serial.print(pressCount);
+    Serial.println(" - Button PRESSED!");
+  } 
   
-  if (buttonState == LOW) {
-    Serial.println(">>> BUTTON IS PRESSED! <<<");
-  }
-  
-  delay(200);  // Read every 200ms
+  lastState = currentState;
 }
