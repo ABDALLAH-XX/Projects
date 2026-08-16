@@ -3,23 +3,36 @@
 #define BUTTON_PIN 26
 
 int lastState = HIGH;
-const char* messages[] = {"Hello!", "Awesome!", "Keep going!", "ESP32 rocks!",
-"Great job!"};
+int currentState;
+unsigned long lastDebounceTime = 0;
+const unsigned long debounceDelay = 50; // 50ms debounce
 
 
 void setup() {
   Serial.begin(9600);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
-  randomSeed(analogRead(0));
+  Serial.println("=== Button with Debouncing ===");
+  Serial.println("Press the button - no false triggers!");
 }
 
 void loop() {
-  int currentState = digitalRead(BUTTON_PIN);
+  int reading = digitalRead(BUTTON_PIN);
   
-  if (lastState == HIGH && currentState == LOW) {
-    int index = random(5);
-    Serial.println(messages[index]);
-  } 
+  // Check if state changed
+  if (reading != lastState) {
+    lastDebounceTime = millis();
+  }
   
-  lastState = currentState;
+  // Wait for debounce time
+  if ((millis() - lastDebounceTime) > debounceDelay) {
+    if (reading != currentState) {
+      currentState = reading;
+
+      if (currentState == LOW) {
+        Serial.println("Button PRESSED (debounced)!");
+      }
+    }
+  }
+  
+  lastState = reading;
 }
