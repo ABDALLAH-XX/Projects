@@ -1,7 +1,7 @@
 #include <Arduino.h>
 
 #define BUTTON_PIN 26        // GPIO26 pin connected to button
-#define SHORT_PRESS_TIME 500 // 500 milliseconds
+#define LONG_PRESS_TIME 500 // 500 milliseconds
 
 // Variables will change:
 int lastState = LOW;  // the previous state from the input pin
@@ -25,8 +25,8 @@ void loop() {
 
     long pressDuration = releasedTime - pressedTime;
 
-    if (pressDuration < SHORT_PRESS_TIME)
-      Serial.println("A short press is detected");
+    if (pressDuration > LONG_PRESS_TIME)
+      Serial.println("A long press is detected");
   }
 
   // save the last state
