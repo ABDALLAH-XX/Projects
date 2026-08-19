@@ -1,13 +1,14 @@
 #include <Arduino.h>
 
 #define BUTTON_PIN 26        // GPIO26 pin connected to button
-#define LONG_PRESS_TIME 500 // 500 milliseconds
+#define LONG_PRESS_TIME 1000 // 1000 milliseconds
 
 // Variables will change:
 int lastState = LOW;  // the previous state from the input pin
 int currentState;     // the current reading from the input pin
 unsigned long pressedTime = 0;
-unsigned long releasedTime = 0;
+bool isPressing = false;
+bool isLongDetected = false;
 
 void setup() {
   Serial.begin(9600);
@@ -18,15 +19,21 @@ void loop() {
   // read the state of the switch/button
   currentState = digitalRead(BUTTON_PIN);
 
-  if (lastState == HIGH && currentState == LOW)
+  if (lastState == HIGH && currentState == LOW) {
     pressedTime = millis();
-  else if (lastState == LOW && currentState == HIGH) {
-    releasedTime = millis();
+    isPressing = true;
+    isLongDetected = false;
+  } else if (lastState == LOW && currentState == HIGH) {
+    isPressing = false;
+  }
+  
+  if (isPressing == true && isLongDetected == false){
+    long pressDuration = millis() - pressedTime;
 
-    long pressDuration = releasedTime - pressedTime;
-
-    if (pressDuration > LONG_PRESS_TIME)
+    if (pressDuration > LONG_PRESS_TIME){
       Serial.println("A long press is detected");
+      isLongDetected = true;
+    }
   }
 
   // save the last state
