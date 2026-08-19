@@ -11,6 +11,8 @@ ezButton button(26); // create ezButton object that allows that attach to pin GP
 // Variables will change:
 unsigned long pressedTime = 0;
 unsigned long releasedTime = 0;
+bool isPressing = false;
+bool isLongDetected = false;
 
 void setup() {
   Serial.begin(9600);
@@ -21,18 +23,29 @@ void loop() {
   // read the state of the switch/button
   button.loop(); // MUST call the loop() function first
 
-  if (button.isPressed())
+  if (button.isPressed()) {
     pressedTime = millis();
+    isPressing = true;
+    isLongDetected = false;
+  }
 
   if (button.isReleased()) {
+    isPressing = false;
     releasedTime = millis();
+
 
     long pressDuration = releasedTime - pressedTime;
 
     if (pressDuration < SHORT_PRESS_TIME)
       Serial.println("A short press is detected");
+  }
 
-    if (pressDuration > LONG_PRESS_TIME)
+  if (isPressing == true && isLongDetected == false) {
+    long pressDuration = millis() - pressedTime;
+
+    if (pressDuration > LONG_PRESS_TIME) {
       Serial.println("A long press is detected");
+      isLongDetected = true;
+    }
   }
 }
