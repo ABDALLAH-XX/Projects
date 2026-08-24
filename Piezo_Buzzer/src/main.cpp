@@ -10,15 +10,26 @@
 
 int buzzerPin = 18; 
 
+void playTone(int frequency, int durationMs) {
+  long halfPeriod = 1000000L / (2L * frequency);   
+  long cycles = (long)frequency * durationMs / 1000L;
+
+  for (long i = 0; i < cycles; i++) {
+    digitalWrite(buzzerPin, HIGH);
+    delayMicroseconds(halfPeriod);
+    digitalWrite(buzzerPin, LOW);
+    delayMicroseconds(halfPeriod);
+  }
+}
+
 void setup() {
   pinMode(buzzerPin, OUTPUT);
 }
 
 void loop() {
-  tone(buzzerPin, 523);  // Play C5 note (523 Hz)
-  delay(500);            // Wait for 0.5 second
-  tone(buzzerPin, 659);  // Play E5 note (659 Hz)
-  delay(500);
-  noTone(buzzerPin);
-  delay(1000);
+  playTone(300, 500);  // Play C5 note (523 Hz) for 500ms
+  delay(10);            // Wait for 0.5 second
+
+  playTone(659, 500); // E5 (659Hz) for 500ms
+  delay(1000);        // Equivalent to noTone() + delay(1000)
 }
