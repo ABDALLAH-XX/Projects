@@ -15,8 +15,8 @@ void setup() {
 }
 
 void loop() {
-  digitalWrite(buzzerPin, HIGH);  // Turn buzzer on
-  delay(1000);                    // Wait for 1 second
-  digitalWrite(buzzerPin, LOW);   // Turn buzzer off
-  delay(1000);                    // Wait for 1 second
+  tone(buzzerPin, 1000);  // Play 1000 Hz tone
+  delay(1000);            // Wait for 1 second
+  noTone(buzzerPin);      // Stop the tone
+  delay(1000);            // Wait for 1 second before repeating                   // Wait for 1 second
 }
