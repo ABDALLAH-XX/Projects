@@ -15,8 +15,10 @@ void setup() {
 }
 
 void loop() {
-  tone(buzzerPin, 1000);  // Play 1000 Hz tone
-  delay(1000);            // Wait for 1 second
-  noTone(buzzerPin);      // Stop the tone
-  delay(1000);            // Wait for 1 second before repeating                   // Wait for 1 second
+  tone(buzzerPin, 523);  // Play C5 note (523 Hz)
+  delay(500);            // Wait for 0.5 second
+  tone(buzzerPin, 659);  // Play E5 note (659 Hz)
+  delay(500);
+  noTone(buzzerPin);
+  delay(1000);
 }
