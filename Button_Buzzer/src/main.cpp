@@ -20,12 +20,14 @@ void loop() {
 
   if (buttonState == LOW) {
     Serial.println("The button is being pressed");
-    digitalWrite(BUZZER_PIN, HIGH); // turn on
+    //digitalWrite(BUZZER_PIN, HIGH); // turn on
+    tone(BUZZER_PIN, 500);
   }
   else {
     if (buttonState == HIGH) {
       Serial.println("The button is released");
-      digitalWrite(BUZZER_PIN, LOW); // turn off
+      //digitalWrite(BUZZER_PIN, LOW); // turn off
+      noTone(BUZZER_PIN);
     }
   }
 }
