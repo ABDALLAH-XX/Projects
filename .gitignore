@@ -40,3 +40,4 @@ platformio.ini.bak
 
 # Documentation build
 docs/_build/
+pio-esp32cam
