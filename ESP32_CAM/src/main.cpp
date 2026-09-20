@@ -28,8 +28,16 @@
 
 void startCameraServer();
 
-const char* ssid = "A55 de Abdallah";
-const char* password = "Wxcvbn99";
+//const char* ssid = "A55 de Abdallah";
+//const char* password = "Wxcvbn99";
+
+const char* ap_ssid = "ESP32CAM";
+//const char* ap_password = "PasswordESP32CAM";
+
+IPAddress local_IP(192, 168, 10, 1);
+IPAddress gateway(192, 168, 10, 1);
+IPAddress subnet(255, 255, 255, 0);
+
 
 void setup() {
   Serial.begin(115200);
@@ -97,7 +105,7 @@ void setup() {
   s->set_hmirror(s, 1);
 #endif
 
-  WiFi.begin(ssid, password);
+  /*WiFi.begin(ssid, password);
 
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
@@ -111,7 +119,23 @@ void setup() {
 
   Serial.print("Camera Ready! Use 'http://");
   Serial.print(WiFi.localIP());
-  Serial.println("' to connect");
+  Serial.println("' to connect");*/
+
+  // 3. Configuration du réseau Point d'Accès (SoftAP)
+  WiFi.mode(WIFI_AP); 
+  WiFi.softAP(ap_ssid); 
+  delay(100); 
+  WiFi.softAPConfig(local_IP, gateway, subnet); 
+
+  /*WiFi.mode(WIFI_AP);
+  WiFi.softAPConfig(local_IP, gateway, subnet);
+  WiFi.softAP(ap_ssid, ap_password);*/
+
+  IPAddress IP = WiFi.softAPIP();
+  Serial.print("Point d'accès créé ! IP : http://");
+  Serial.println(IP);
+
+  startCameraServer();
 }
 
 void loop() {
