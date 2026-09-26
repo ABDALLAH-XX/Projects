@@ -15,9 +15,12 @@
 #include "esp_camera.h"
 #include <WiFi.h>
 #include "esp_http_server.h"
+#include "base64.h"
 
-/* ---------------- Sélection du modèle de caméra ---------------- */
-#define CAMERA_MODEL_AI_THINKER
+/* ---------------- Selection du modele de camera ---------------- */
+/* Decommente UNE seule des deux lignes suivantes selon la carte utilisee */
+//#define CAMERA_MODEL_AI_THINKER   // ESP32-CAM classique
+#define CAMERA_MODEL_ESP32S3_EYE    // Freenove ESP32-S3-WROOM CAM
 
 #if defined(CAMERA_MODEL_AI_THINKER)
 #define PWDN_GPIO_NUM     32
@@ -36,6 +39,31 @@
 #define VSYNC_GPIO_NUM    25
 #define HREF_GPIO_NUM     23
 #define PCLK_GPIO_NUM     22
+#define CAM_XCLK_FREQ_HZ  20000000
+#define CAM_FB_COUNT      2
+#define CAM_JPEG_QUALITY  12
+
+#elif defined(CAMERA_MODEL_ESP32S3_EYE)
+#define PWDN_GPIO_NUM     -1
+#define RESET_GPIO_NUM    -1
+#define XCLK_GPIO_NUM     15
+#define SIOD_GPIO_NUM      4
+#define SIOC_GPIO_NUM      5
+#define Y9_GPIO_NUM       16
+#define Y8_GPIO_NUM       17
+#define Y7_GPIO_NUM       18
+#define Y6_GPIO_NUM       12
+#define Y5_GPIO_NUM       10
+#define Y4_GPIO_NUM        8
+#define Y3_GPIO_NUM        9
+#define Y2_GPIO_NUM       11
+#define VSYNC_GPIO_NUM     6
+#define HREF_GPIO_NUM      7
+#define PCLK_GPIO_NUM     13
+#define CAM_XCLK_FREQ_HZ  10000000
+#define CAM_FB_COUNT      1
+#define CAM_JPEG_QUALITY  10
+
 #else
 #error "Camera model not selected"
 #endif
@@ -70,13 +98,13 @@ static camera_config_t camera_config = {
     .pin_vsync = VSYNC_GPIO_NUM,
     .pin_href  = HREF_GPIO_NUM,
     .pin_pclk  = PCLK_GPIO_NUM,
-    .xclk_freq_hz = 20000000,
+    .xclk_freq_hz = CAM_XCLK_FREQ_HZ,
     .ledc_timer   = LEDC_TIMER_0,
     .ledc_channel = LEDC_CHANNEL_0,
     .pixel_format = PIXFORMAT_JPEG,
     .frame_size   = FRAMESIZE_QVGA,
-    .jpeg_quality = 12,
-    .fb_count     = 2,
+    .jpeg_quality = CAM_JPEG_QUALITY,
+    .fb_count     = CAM_FB_COUNT,
     .fb_location  = CAMERA_FB_IN_PSRAM,
     .grab_mode    = CAMERA_GRAB_WHEN_EMPTY,
 };
@@ -106,17 +134,29 @@ static const char INDEX_HTML[] PROGMEM = R"====(
 </head>
 <body>
   <h2>ESP32-CAM &mdash; Detection en direct</h2>
-  <img id="cam" src="/capture">
+  <img id="cam" src="">
   <br>
-  <pre id="results">En attente...</pre>
+  <pre id="results">En attente de la premiere inference (peut prendre quelques secondes)...</pre>
   <script>
+    const MARKER = "##EI-SPLIT##";
     function refreshAll() {
-      document.getElementById('cam').src = '/capture?t=' + Date.now();
       fetch('/predict').then(r => r.text()).then(t => {
-        document.getElementById('results').innerText = t;
+        const idx = t.indexOf(MARKER);
+        if (idx === -1) {
+          document.getElementById('results').innerText = t;
+        } else {
+          const b64 = t.substring(0, idx);
+          const txt = t.substring(idx + MARKER.length);
+          document.getElementById('cam').src = 'data:image/jpeg;base64,' + b64;
+          document.getElementById('results').innerText = txt;
+        }
+      }).catch(e => {
+        document.getElementById('results').innerText = 'Erreur reseau, nouvelle tentative...';
+      }).finally(() => {
+        // On relance seulement une fois le cycle precedent termine
+        setTimeout(refreshAll, 200);
       });
     }
-    setInterval(refreshAll, 1500);
     refreshAll();
   </script>
 </body>
@@ -129,88 +169,100 @@ static esp_err_t index_handler(httpd_req_t *req) {
 }
 
 /* ============================================================
-   Handler /capture : une photo JPEG brute (pour l'affichage)
+   Handler /predict : UNE SEULE capture, reutilisee pour
+   l'affichage (JPEG -> base64) ET l'inference Edge Impulse.
+   Reponse : <image base64>##EI-SPLIT##<texte des resultats>
    ============================================================ */
-static esp_err_t capture_handler(httpd_req_t *req) {
+static const char* SPLIT_MARKER = "##EI-SPLIT##";
+
+static esp_err_t predict_handler(httpd_req_t *req) {
+    uint32_t t_start = millis();
+
     camera_fb_t * fb = esp_camera_fb_get();
     if (!fb) {
         httpd_resp_send_500(req);
         return ESP_FAIL;
     }
-    httpd_resp_set_type(req, "image/jpeg");
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-    esp_err_t res = httpd_resp_send(req, (const char *)fb->buf, fb->len);
-    esp_camera_fb_return(fb);
-    return res;
-}
-
-/* ============================================================
-   Handler /predict : capture + inference Edge Impulse
-   Renvoie le resultat en texte brut
-   ============================================================ */
-static esp_err_t predict_handler(httpd_req_t *req) {
-    char resp[1024];
-    int len = 0;
 
     snapshot_buf = (uint8_t*)malloc(EI_CAMERA_RAW_FRAME_BUFFER_COLS * EI_CAMERA_RAW_FRAME_BUFFER_ROWS * EI_CAMERA_FRAME_BYTE_SIZE);
     if (snapshot_buf == nullptr) {
-        len = snprintf(resp, sizeof(resp), "ERR: allocation buffer echouee\n");
-        httpd_resp_set_type(req, "text/plain");
-        httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-        return httpd_resp_send(req, resp, len);
+        esp_camera_fb_return(fb);
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
     }
 
-    ei::signal_t signal;
-    signal.total_length = EI_CLASSIFIER_INPUT_WIDTH * EI_CLASSIFIER_INPUT_HEIGHT;
-    signal.get_data = &ei_camera_get_data;
+    bool converted = fmt2rgb888(fb->buf, fb->len, PIXFORMAT_JPEG, snapshot_buf);
 
-    if (!ei_camera_capture((size_t)EI_CLASSIFIER_INPUT_WIDTH, (size_t)EI_CLASSIFIER_INPUT_HEIGHT, snapshot_buf)) {
+    // On encode le JPEG BRUT original (avant conversion) pour l'affichage,
+    // puis on rend le buffer camera : plus besoin de refaire une capture.
+    String imgB64 = base64::encode(fb->buf, fb->len);
+    esp_camera_fb_return(fb);
+
+    char resultText[768];
+    int len = 0;
+
+    if (!converted) {
         free(snapshot_buf);
-        len = snprintf(resp, sizeof(resp), "ERR: capture echouee\n");
-        httpd_resp_set_type(req, "text/plain");
-        httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-        return httpd_resp_send(req, resp, len);
-    }
+        len = snprintf(resultText, sizeof(resultText), "ERR: conversion echouee\n");
+    } else {
+        if ((EI_CLASSIFIER_INPUT_WIDTH != EI_CAMERA_RAW_FRAME_BUFFER_COLS) ||
+            (EI_CLASSIFIER_INPUT_HEIGHT != EI_CAMERA_RAW_FRAME_BUFFER_ROWS)) {
+            ei::image::processing::crop_and_interpolate_rgb888(
+                snapshot_buf, EI_CAMERA_RAW_FRAME_BUFFER_COLS, EI_CAMERA_RAW_FRAME_BUFFER_ROWS,
+                snapshot_buf, EI_CLASSIFIER_INPUT_WIDTH, EI_CLASSIFIER_INPUT_HEIGHT);
+        }
 
-    ei_impulse_result_t result = { 0 };
-    EI_IMPULSE_ERROR err = run_classifier(&signal, &result, debug_nn);
-    free(snapshot_buf);
+        ei::signal_t signal;
+        signal.total_length = EI_CLASSIFIER_INPUT_WIDTH * EI_CLASSIFIER_INPUT_HEIGHT;
+        signal.get_data = &ei_camera_get_data;
 
-    if (err != EI_IMPULSE_OK) {
-        len = snprintf(resp, sizeof(resp), "ERR: classifier (%d)\n", err);
-        httpd_resp_set_type(req, "text/plain");
-        httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-        return httpd_resp_send(req, resp, len);
-    }
+        ei_impulse_result_t result = { 0 };
+        EI_IMPULSE_ERROR err = run_classifier(&signal, &result, debug_nn);
+        free(snapshot_buf);
 
-    len += snprintf(resp + len, sizeof(resp) - len,
-        "DSP: %d ms | Classification: %d ms | Anomaly: %d ms\n",
-        result.timing.dsp, result.timing.classification, result.timing.anomaly);
+        if (err != EI_IMPULSE_OK) {
+            len = snprintf(resultText, sizeof(resultText), "ERR: classifier (%d)\n", err);
+        } else {
+            len += snprintf(resultText + len, sizeof(resultText) - len,
+                "DSP: %d ms | Classification: %d ms | Anomaly: %d ms\n",
+                result.timing.dsp, result.timing.classification, result.timing.anomaly);
 
 #if EI_CLASSIFIER_OBJECT_DETECTION == 1
-    len += snprintf(resp + len, sizeof(resp) - len, "Objets detectes:\n");
-    for (uint32_t i = 0; i < result.bounding_boxes_count && len < (int)sizeof(resp) - 80; i++) {
-        ei_impulse_result_bounding_box_t bb = result.bounding_boxes[i];
-        if (bb.value == 0) continue;
-        len += snprintf(resp + len, sizeof(resp) - len,
-            "  %s (%.2f) x:%u y:%u w:%u h:%u\n",
-            bb.label, bb.value, bb.x, bb.y, bb.width, bb.height);
-    }
+            len += snprintf(resultText + len, sizeof(resultText) - len, "Objets detectes:\n");
+            for (uint32_t i = 0; i < result.bounding_boxes_count && len < (int)sizeof(resultText) - 80; i++) {
+                ei_impulse_result_bounding_box_t bb = result.bounding_boxes[i];
+                if (bb.value == 0) continue;
+                len += snprintf(resultText + len, sizeof(resultText) - len,
+                    "  %s (%.2f) x:%u y:%u w:%u h:%u\n",
+                    bb.label, bb.value, bb.x, bb.y, bb.width, bb.height);
+            }
 #else
-    len += snprintf(resp + len, sizeof(resp) - len, "Predictions:\n");
-    for (uint16_t i = 0; i < EI_CLASSIFIER_LABEL_COUNT && len < (int)sizeof(resp) - 60; i++) {
-        len += snprintf(resp + len, sizeof(resp) - len,
-            "  %s: %.5f\n", ei_classifier_inferencing_categories[i], result.classification[i].value);
-    }
+            len += snprintf(resultText + len, sizeof(resultText) - len, "Predictions:\n");
+            for (uint16_t i = 0; i < EI_CLASSIFIER_LABEL_COUNT && len < (int)sizeof(resultText) - 60; i++) {
+                len += snprintf(resultText + len, sizeof(resultText) - len,
+                    "  %s: %.5f\n", ei_classifier_inferencing_categories[i], result.classification[i].value);
+            }
 #endif
 
 #if EI_CLASSIFIER_HAS_ANOMALY
-    len += snprintf(resp + len, sizeof(resp) - len, "Anomalie: %.3f\n", result.anomaly);
+            len += snprintf(resultText + len, sizeof(resultText) - len, "Anomalie: %.3f\n", result.anomaly);
 #endif
+        }
+    }
+
+    uint32_t t_total = millis() - t_start;
+    ei_printf("Cycle complet: %lu ms (%.1f FPS)\n", (unsigned long)t_total, 1000.0f / t_total);
+    len += snprintf(resultText + len, sizeof(resultText) - len,
+        "\nCycle complet: %lu ms (%.1f FPS)\n", (unsigned long)t_total, 1000.0f / t_total);
 
     httpd_resp_set_type(req, "text/plain");
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-    return httpd_resp_send(req, resp, len);
+    httpd_resp_send_chunk(req, imgB64.c_str(), imgB64.length());
+    httpd_resp_send_chunk(req, SPLIT_MARKER, strlen(SPLIT_MARKER));
+    httpd_resp_send_chunk(req, resultText, len);
+    httpd_resp_send_chunk(req, NULL, 0);
+
+    return ESP_OK;
 }
 
 /* ============================================================
@@ -224,16 +276,12 @@ void startCameraServer() {
     httpd_uri_t index_uri = {
         .uri = "/", .method = HTTP_GET, .handler = index_handler, .user_ctx = NULL
     };
-    httpd_uri_t capture_uri = {
-        .uri = "/capture", .method = HTTP_GET, .handler = capture_handler, .user_ctx = NULL
-    };
     httpd_uri_t predict_uri = {
         .uri = "/predict", .method = HTTP_GET, .handler = predict_handler, .user_ctx = NULL
     };
 
     if (httpd_start(&camera_httpd, &config) == ESP_OK) {
         httpd_register_uri_handler(camera_httpd, &index_uri);
-        httpd_register_uri_handler(camera_httpd, &capture_uri);
         httpd_register_uri_handler(camera_httpd, &predict_uri);
     }
 }
@@ -281,11 +329,28 @@ bool ei_camera_init(void) {
     }
 
     sensor_t * s = esp_camera_sensor_get();
-    if (s->id.PID == OV3660_PID) {
+    uint16_t pid = s->id.PID;
+    if (pid == OV2640_PID) {
+        s->set_hmirror(s, 1);
         s->set_vflip(s, 1);
-        s->set_brightness(s, 1);
-        s->set_saturation(s, 0);
+    } else if (pid == OV3660_PID) {
+        s->set_hmirror(s, 1);
+        s->set_vflip(s, 1);  // corrige: image inversee sur ce montage
+    } else if (pid == GC2145_PID) {
+        s->set_hmirror(s, 0);
+        delay(500);
+        s->set_vflip(s, 0);
+    } else if (pid == GC0308_PID) {
+        s->set_hmirror(s, 0);
+        delay(500);
+        s->set_vflip(s, 0);
+    } else {
+        s->set_hmirror(s, 1);
+        s->set_vflip(s, 0);
     }
+    s->set_brightness(s, 1);
+    s->set_saturation(s, 0);
+    s->set_ae_level(s, -3);
 
     is_initialised = true;
     return true;
