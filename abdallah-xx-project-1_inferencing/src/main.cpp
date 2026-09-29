@@ -62,7 +62,7 @@
 #define PCLK_GPIO_NUM     13
 #define CAM_XCLK_FREQ_HZ  10000000
 #define CAM_FB_COUNT      1
-#define CAM_JPEG_QUALITY  10
+#define CAM_JPEG_QUALITY  12
 
 #else
 #error "Camera model not selected"
@@ -71,6 +71,9 @@
 /* ---------------- Wi-Fi : point d'accès autonome ---------------- */
 const char* ap_ssid     = "ESP32-CAM-CAMERAS";
 const char* ap_password = "Password1234";
+
+const char* ssid = "Livebox-A230";
+const char* password = "VLWNQCCZcnwzMcAmAj";
 
 IPAddress local_IP(192, 168, 4, 1);
 IPAddress gateway(192, 168, 4, 1);
@@ -154,7 +157,7 @@ static const char INDEX_HTML[] PROGMEM = R"====(
         document.getElementById('results').innerText = 'Erreur reseau, nouvelle tentative...';
       }).finally(() => {
         // On relance seulement une fois le cycle precedent termine
-        setTimeout(refreshAll, 200);
+        setTimeout(refreshAll, 10);
       });
     }
     refreshAll();
@@ -166,6 +169,25 @@ static const char INDEX_HTML[] PROGMEM = R"====(
 static esp_err_t index_handler(httpd_req_t *req) {
     httpd_resp_set_type(req, "text/html");
     return httpd_resp_send(req, INDEX_HTML, strlen(INDEX_HTML));
+}
+
+/* ============================================================
+   Handler /capture : Renvoie une simple photo JPEG
+   ============================================================ */
+static esp_err_t capture_handler(httpd_req_t *req) {
+    camera_fb_t * fb = esp_camera_fb_get();
+    if (!fb) {
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
+
+    httpd_resp_set_type(req, "image/jpeg");
+    httpd_resp_set_hdr(req, "Content-Disposition", "inline; filename=capture.jpg");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+
+    esp_err_t res = httpd_resp_send(req, (const char *)fb->buf, fb->len);
+    esp_camera_fb_return(fb);
+    return res;
 }
 
 /* ============================================================
@@ -271,7 +293,7 @@ static esp_err_t predict_handler(httpd_req_t *req) {
 void startCameraServer() {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 80;
-    config.stack_size = 16384; // l'inference a besoin de bien plus de pile que la valeur par defaut
+    config.stack_size = 16384;
 
     httpd_uri_t index_uri = {
         .uri = "/", .method = HTTP_GET, .handler = index_handler, .user_ctx = NULL
@@ -279,10 +301,15 @@ void startCameraServer() {
     httpd_uri_t predict_uri = {
         .uri = "/predict", .method = HTTP_GET, .handler = predict_handler, .user_ctx = NULL
     };
+    // --- NOUVELLE ROUTE ---
+    httpd_uri_t capture_uri = {
+        .uri = "/capture", .method = HTTP_GET, .handler = capture_handler, .user_ctx = NULL
+    };
 
     if (httpd_start(&camera_httpd, &config) == ESP_OK) {
         httpd_register_uri_handler(camera_httpd, &index_uri);
         httpd_register_uri_handler(camera_httpd, &predict_uri);
+        httpd_register_uri_handler(camera_httpd, &capture_uri); // <-- Enregistrement ici
     }
 }
 
@@ -309,6 +336,16 @@ void setup() {
     Serial.print("http://");
     Serial.println(WiFi.softAPIP());
 
+    /*WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid, password);
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+        Serial.print(".");
+    }
+    Serial.println("\nWi-Fi connecté !");
+    Serial.print("Adresse IP : ");
+    Serial.println(WiFi.localIP());*/
+
     startCameraServer();
 }
 
@@ -334,7 +371,7 @@ bool ei_camera_init(void) {
         s->set_hmirror(s, 1);
         s->set_vflip(s, 1);
     } else if (pid == OV3660_PID) {
-        s->set_hmirror(s, 1);
+        s->set_hmirror(s, 0);
         s->set_vflip(s, 1);  // corrige: image inversee sur ce montage
     } else if (pid == GC2145_PID) {
         s->set_hmirror(s, 0);

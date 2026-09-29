@@ -11,7 +11,7 @@ class CollectorGUIWithoutCV2:
     def __init__(self, root):
         self.root = root
         self.root.title("Collecteur ESP32-CAM (Sans OpenCV)")
-        self.root.geometry("450x400")
+        self.root.geometry("600x400") # Agrandie pour mieux accueillir l'aperçu
 
         self.is_capturing = False
         self.is_streaming = False
@@ -101,24 +101,37 @@ class CollectorGUIWithoutCV2:
 
     def capture_loop(self, ip, output_dir, label):
         url = f"http://{ip}/capture"
-        interval = float(self.interval_spinbox.get())
 
         while self.is_capturing:
             try:
+                interval = float(self.interval_spinbox.get())
+            except ValueError:
+                interval = 1.0
+
+            try:
                 response = requests.get(url, timeout=3)
                 if response.status_code == 200:
-                    timestamp = int(time.time() * 1000)
-                    filepath = os.path.join(output_dir, f"{label}_{timestamp}.jpg")
+                    # 1. Charger l'image brute depuis la réponse HTTP
+                    img = Image.open(io.BytesIO(response.content))
+                    
+                    # 2. Redimensionner l'image précisément à 160x120 (QQVGA)
+                    img_160x120 = img.resize((160, 120), Image.Resampling.LANCZOS)
 
-                    with open(filepath, 'wb') as f:
-                        f.write(response.content)
+                    # 3. Sauvegarder le fichier au format compatible Edge Impulse
+                    timestamp = int(time.time() * 1000)
+                    filepath = os.path.join(output_dir, f"{label}.{timestamp}.jpg")
+                    img_160x120.save(filepath, quality=90)
 
                     self.image_count += 1
-                    self.counter_label.config(text=f"Images enregistrées : {self.image_count}")
+                    # Mise à jour du compteur via l'Event Loop de Tkinter
+                    self.root.after(0, self.update_counter, self.image_count)
             except Exception:
                 pass
 
             time.sleep(interval)
+
+    def update_counter(self, count):
+        self.counter_label.config(text=f"Images enregistrées : {count}")
 
     def stop_capture(self):
         self.is_capturing = False
